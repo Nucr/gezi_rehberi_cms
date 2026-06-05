@@ -293,7 +293,7 @@ def parse_rich_text(desc):
     return ""
 
 def api_headers():
-    if STRAPI_API_TOKEN:
+    if STRAPI_API_TOKEN and STRAPI_API_TOKEN.lower() not in ("none", "null", "false", ""):
         return {"Authorization": f"Bearer {STRAPI_API_TOKEN}"}
     return {}
 
