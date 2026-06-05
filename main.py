@@ -25,6 +25,7 @@ import hashlib
 import re
 from deep_translator import GoogleTranslator
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 
 # Local ortamdaki .env dosyasını yükle (eğer varsa)
@@ -137,6 +138,40 @@ cities_data = [
                     "dünyanın en iyi korunmuş Roma tiyatrolarından biri."
                 ),
                 "score": 4.8
+            },
+        ]
+    },
+    {
+        "name": "İzmir",
+        "country": "Türkiye",
+        "description": (
+            "Ege'nin incisi; tarihi limanı, canlı sokakları, antik kentleri ve "
+            "sıcakkanlı insanlarıyla Türkiye'nin üçüncü büyük metropolü."
+        ),
+        "places": [
+            {
+                "name": "İzmir Saat Kulesi",
+                "description": (
+                    "Konak Meydanı'nda yer alan, 1901 yılında inşa edilmiş "
+                    "ve İzmir'in en önemli simgesi olan zarif Osmanlı yapısı."
+                ),
+                "score": 4.7
+            },
+            {
+                "name": "Efes Antik Kenti",
+                "description": (
+                    "Dünyanın en iyi korunmuş antik kentlerinden biri; Celcius Kütüphanesi "
+                    "ve devasa antik tiyatrosuyla UNESCO Dünya Mirası Listesi'ndedir."
+                ),
+                "score": 4.9
+            },
+            {
+                "name": "Tarihi Kemeraltı Çarşısı",
+                "description": (
+                    "Dünyanın en eski ve en büyük açık hava çarşılarından biri; "
+                    "tarihi hanları, baharatçıları ve hareketli alışveriş sokaklarıyla ünlü."
+                ),
+                "score": 4.6
             },
         ]
     },
@@ -277,6 +312,12 @@ def generate_image(place_name, city_name):
         url = "https://images.unsplash.com/photo-1433832597046-4f10e10ac764?w=800&auto=format&fit=crop&q=75"
     elif "aspendos" in p_name or "tiyatro" in p_name:
         url = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop&q=75"
+    elif "saat kulesi" in p_name or "clock tower" in p_name:
+        url = "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=800&auto=format&fit=crop&q=75"
+    elif "efes" in p_name or "ephesus" in p_name:
+        url = "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&auto=format&fit=crop&q=75"
+    elif "kemeraltı" in p_name or "kemeralti" in p_name:
+        url = "https://images.unsplash.com/photo-1605809791441-2b0e98030999?w=800&auto=format&fit=crop&q=75"
 
     print(f"[PAINT] '{place_name}' için yüksek kaliteli ve kararlı görsel indiriliyor...")
 
