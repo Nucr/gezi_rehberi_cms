@@ -228,13 +228,17 @@ def normalize_relation(value):
 def dedupe_entries(entries):
     unique = {}
     for item in entries:
-        key = item.get("documentId") or item.get("id")
-        if key is None:
+        # İsim bazlı tekilleştirme yapıyoruz (en güncel olanı korumak için)
+        name = item.get("name")
+        if not name:
             continue
-        current = unique.get(key)
-        if current is None or (not current.get("publishedAt") and item.get("publishedAt")):
-            unique[key] = item
+        
+        current = unique.get(name)
+        # Eğer henüz yoksa veya gelen kaydın ID'si mevcut olandan daha büyükse (yani daha yeniyse) güncelle
+        if current is None or item.get("id", 0) > current.get("id", 0):
+            unique[name] = item
     return list(unique.values())
+
 
 def extract_url_from_anywhere(data):
     """Verilen veri yapısı ne kadar derin olursa olsun içindeki görsel linkini kazır."""
@@ -297,15 +301,16 @@ def api_headers():
         return {"Authorization": f"Bearer {STRAPI_API_TOKEN}"}
     return {}
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def fetch_places(locale="tr"):
     try:
-        # Sorguyu populate=* yaparak tüm ilişkileri (cover medyasını derinlemesine) çekmeye zorluyoruz
-        url = f"{STRAPI_URL}/api/places?locale={locale}&populate=*&pagination[pageSize]=200"
+        # Sorguyu populate=* yaparak tüm ilişkileri çekiyoruz ve en yeni eklenenleri önceliklendirmek için sort=id:desc ekliyoruz
+        url = f"{STRAPI_URL}/api/places?locale={locale}&populate=*&pagination[pageSize]=200&sort=id:desc"
         headers = api_headers()
         res = requests.get(url, headers=headers, timeout=10)
         res.raise_for_status()
         return dedupe_entries([normalize_entry(item) for item in res.json().get("data", [])])
+
     except Exception as e:
         st.sidebar.error(f"API Bağlantı Hatası: {e}")
         if 'res' in locals():
