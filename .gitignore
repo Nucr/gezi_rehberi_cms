@@ -1,0 +1,35 @@
+# Ortam değişkenleri — ASLA git'e yüklenmesin!
+.env
+.env.local
+.env.production
+
+# API token dosyası — hassas bilgi
+api_token.txt
+
+# Python sanal ortamı
+.venv/
+venv/
+env/
+
+# Python derleme dosyaları
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Streamlit önbellek
+.streamlit/secrets.toml
+
+# Geçici dosyalar
+*.jpg
+*.jpeg
+*.png
+temp_*
+
+# IDE dosyaları
+.vscode/
+.idea/
+*.swp
+
+# OS dosyaları
+.DS_Store
+Thumbs.db
