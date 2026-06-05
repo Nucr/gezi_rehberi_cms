@@ -302,10 +302,14 @@ def fetch_places(locale="tr"):
     try:
         # Sorguyu populate=* yaparak tüm ilişkileri (cover medyasını derinlemesine) çekmeye zorluyoruz
         url = f"{STRAPI_URL}/api/places?locale={locale}&populate=*&pagination[pageSize]=200"
-        res = requests.get(url, headers=api_headers(), timeout=10)
+        headers = api_headers()
+        res = requests.get(url, headers=headers, timeout=10)
         res.raise_for_status()
         return dedupe_entries([normalize_entry(item) for item in res.json().get("data", [])])
-    except Exception:
+    except Exception as e:
+        st.sidebar.error(f"API Bağlantı Hatası: {e}")
+        if 'res' in locals():
+            st.sidebar.error(f"Sunucu Yanıtı ({res.status_code}): {res.text[:150]}")
         return []
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
