@@ -326,6 +326,18 @@ def image_url_from_cover(cover):
         
     return STRAPI_URL + url_str if url_str.startswith("/") else url_str
 
+CURATED_PLACE_IMAGES = {
+    "aspendos antik tiyatrosu": "https://commons.wikimedia.org/wiki/Special:FilePath/Theatre%20Aspendos.jpg?width=1200",
+    "düden şelalesi": "https://commons.wikimedia.org/wiki/Special:FilePath/Lower%20Duden%20Falls.jpg?width=1200",
+    "duden selalesi": "https://commons.wikimedia.org/wiki/Special:FilePath/Lower%20Duden%20Falls.jpg?width=1200",
+    "kaleiçi": "https://commons.wikimedia.org/wiki/Special:FilePath/Antalya%20Kalei%C3%A7i.jpg?width=1200",
+    "kaleici": "https://commons.wikimedia.org/wiki/Special:FilePath/Antalya%20Kalei%C3%A7i.jpg?width=1200",
+}
+
+def get_curated_place_image(place_name):
+    normalized = str(place_name).strip().lower()
+    return CURATED_PLACE_IMAGES.get(normalized)
+
 @st.cache_data(ttl=60, show_spinner=False)
 def is_url_valid(url):
     if not url:
@@ -494,6 +506,9 @@ for idx, place in enumerate(filtered_places):
                 cover_url = "https://" + cover_url.split("https://")[-1]
             if is_url_valid(cover_url):
                 img_url = cover_url
+
+        if not img_url:
+            img_url = get_curated_place_image(place_name)
 
         if img_url:
             st.markdown(f'<div class="place-image-container"><img src="{img_url}" alt="{escape(str(display_place_name))}" loading="lazy"></div>', unsafe_allow_html=True)
