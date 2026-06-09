@@ -402,7 +402,7 @@ def fetch_places(locale="tr"):
         st.sidebar.error(f"API Bağlantı Hatası: {e}")
         if 'res' in locals():
             st.sidebar.error(f"Sunucu Yanıtı ({res.status_code}): {res.text[:150]}")
-        return []
+        return None
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -426,8 +426,12 @@ with st.sidebar:
 # ─── VERİ YÜKLEME (HER ZAMAN TR - TAM LİSTE) ──────────────────────────────────
 places = fetch_places("tr")
 
-if not places:
+if places is None:
     st.markdown(f'<div class="custom-error">⚠️ Veriler yüklenemedi. Lütfen Strapi backendinizin ayakta olduğundan emin olun.</div>', unsafe_allow_html=True)
+    st.stop()
+
+if not places:
+    st.markdown(f'<div class="custom-error">Veritabanı şu anda boş. Yeni şehir ve mekan verisi eklediğinizde burada görünecek.</div>', unsafe_allow_html=True)
     st.stop()
 
 # ─── ŞEHİR MAPLEME YAPISI ─────────────────────────────────────────────────────
