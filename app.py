@@ -194,44 +194,6 @@ header[data-testid="stHeader"] {
     z-index: 999 !important;
 }
 
-/* ── SIDEBAR TOGGLE: Kapatma butonu ── */
-[data-testid="stSidebarCollapseButton"] {
-    background: rgba(99, 102, 241, 0.15) !important;
-    border-radius: 8px !important;
-    color: #a5b4fc !important;
-    border: 1px solid rgba(99, 102, 241, 0.3) !important;
-    transition: all 0.2s ease !important;
-}
-[data-testid="stSidebarCollapseButton"]:hover {
-    background: rgba(99, 102, 241, 0.35) !important;
-    color: #fff !important;
-}
-
-/* ── SIDEBAR OPEN BUTTON: Sidebar kapalıyken YENİDEN AÇMA butonu ── */
-[data-testid="stSidebarOpenButton"],
-[data-testid="collapsedControl"],
-button[aria-label*="menu"],
-button[aria-label*="Menu"],
-button[aria-label*="Sidebar"],
-.stApp > button {
-    visibility: visible !important;
-    display: flex !important;
-    opacity: 1 !important;
-    position: fixed !important;
-    top: 14px !important;
-    left: 14px !important;
-    z-index: 10000 !important;
-    background: rgba(99, 102, 241, 0.25) !important;
-    border: 1px solid rgba(99, 102, 241, 0.5) !important;
-    border-radius: 10px !important;
-    color: #a5b4fc !important;
-    padding: 10px 12px !important;
-    backdrop-filter: blur(12px) !important;
-    transition: all 0.2s ease !important;
-    width: auto !important;
-    height: auto !important;
-    pointer-events: auto !important;
-}
 
 [data-testid="stSidebarOpenButton"]:hover,
 [data-testid="collapsedControl"]:hover,
