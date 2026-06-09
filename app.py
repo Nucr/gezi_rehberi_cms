@@ -115,6 +115,22 @@ html, body, [class*="css"] {
 .place-card-body {
     padding: 18px 20px 20px 20px;
 }
+.place-image-container {
+    width: 100%;
+    height: 280px;
+    overflow: hidden;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.place-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
 .place-card-name {
     font-size: 1.15em;
     font-weight: 700;
@@ -194,22 +210,20 @@ header[data-testid="stHeader"] {
     z-index: 999 !important;
 }
 
-
-[data-testid="stSidebarOpenButton"]:hover,
-[data-testid="collapsedControl"]:hover,
-button[aria-label*="menu"]:hover,
-button[aria-label*="Menu"]:hover,
-button[aria-label*="Sidebar"]:hover {
-    background: rgba(99, 102, 241, 0.5) !important;
-    color: #fff !important;
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5) !important;
-    transform: scale(1.05) !important;
+/* ── SIDEBAR TOGGLE: Kapatma butonunu GIZLE ── */
+[data-testid="stSidebarCollapseButton"] {
+    display: none !important;
+    visibility: hidden !important;
 }
 
-/* Tüm button ve input elementleri için görünürlük */
-.stApp button {
-    visibility: visible !important;
-    pointer-events: auto !important;
+/* ── SIDEBAR OPEN BUTTON: Sidebar açma butonunu GIZLE ── */
+[data-testid="stSidebarOpenButton"],
+[data-testid="collapsedControl"],
+button[aria-label*="menu"],
+button[aria-label*="Menu"],
+button[aria-label*="Sidebar"] {
+    display: none !important;
+    visibility: hidden !important;
 }
 
 /* Streamlit deploy/share butonlarını gizle */
@@ -496,6 +510,11 @@ for idx, place in enumerate(filtered_places):
     col = cols[idx % COLS]
     with col:
         place_name  = place.get("name", "—")
+        place_score = place.get("score")
+        place_desc  = parse_rich_text(place.get("description", ""))
+        
+        display_place_name = safe_translate(place_name, locale)
+        display_place_desc = safe_translate(place_desc, locale)
         
         # 1. Öncelikle yüksek kaliteli Unsplash görsellerini doğrudan eşleştir
         img_url = get_fallback_image(place_name)
@@ -517,15 +536,9 @@ for idx, place in enumerate(filtered_places):
             img_url = "https://picsum.photos/800/500"
 
         if img_url:
-            st.image(img_url, use_container_width=True)
+            st.markdown(f'<div class="place-image-container"><img src="{img_url}" alt="{escape(str(display_place_name))}" loading="lazy"></div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div class="no-image-box">🗺️</div>', unsafe_allow_html=True)
-
-        place_score = place.get("score")
-        place_desc  = parse_rich_text(place.get("description", ""))
-
-        display_place_name = safe_translate(place_name, locale)
-        display_place_desc = safe_translate(place_desc, locale)
+            st.markdown('<div class="place-image-container" style="background: linear-gradient(135deg, #1e1b4b, #312e81); color: #6366f1; font-size: 4em;">🗺️</div>', unsafe_allow_html=True)
 
         stars, score_val = score_to_stars(place_score)
         score_display = f"{score_val:.1f}" if score_val else ""
