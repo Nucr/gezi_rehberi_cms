@@ -35,6 +35,12 @@ load_dotenv()
 STRAPI_URL = os.getenv("STRAPI_URL", "https://gezi-rehberi-3ucn.onrender.com").rstrip("/")
 STRAPI_EMAIL = os.getenv("STRAPI_EMAIL", "api@gezirehberi.com")
 STRAPI_PASSWORD = os.getenv("STRAPI_PASSWORD", "GeziBip210!")
+POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY", "").strip()
+
+# Pollinations görsel üretim ayarları
+POLLINATIONS_IMAGE_MODEL = os.getenv("POLLINATIONS_IMAGE_MODEL", "flux")
+POLLINATIONS_IMAGE_WIDTH = int(os.getenv("POLLINATIONS_IMAGE_WIDTH", "800"))
+POLLINATIONS_IMAGE_HEIGHT = int(os.getenv("POLLINATIONS_IMAGE_HEIGHT", "500"))
 
 # --- ŞEHİR VE MEKAN VERİLERİ -------------------------------------------------
 # Her şehir için 3 mekan ve açıklama tanımlanmıştır.
@@ -184,32 +190,63 @@ def clear_database(token):
     """Veritabanındaki mükerrer verileri temizler (Mekanlar ve Şehirler silinir)."""
     headers = {"Authorization": f"Bearer {token}"}
     print("[BROOM] Veritabanı temizleniyor (mükerrer kayıtlar siliniyor)...")
-    
-    # Mekanları temizle
-    try:
-        res = requests.get(f"{STRAPI_URL}/api/places?locale=all&pagination[pageSize]=200", headers=headers, timeout=15)
-        if res.status_code == 200:
-            places = res.json().get("data", [])
-            for place in places:
-                doc_id = place.get("documentId")
-                if doc_id:
-                    requests.delete(f"{STRAPI_URL}/api/places/{doc_id}", headers=headers, timeout=10)
-            print(f"   [TRASH]  {len(places)} adet mekan silindi.")
-    except Exception as e:
-        print(f"   [WARN] Mekan temizleme hatası: {e}")
-        
-    # Şehirleri temizle
-    try:
-        res = requests.get(f"{STRAPI_URL}/api/cities?locale=all&pagination[pageSize]=100", headers=headers, timeout=15)
-        if res.status_code == 200:
-            cities = res.json().get("data", [])
-            for city in cities:
-                doc_id = city.get("documentId")
-                if doc_id:
-                    requests.delete(f"{STRAPI_URL}/api/cities/{doc_id}", headers=headers, timeout=10)
-            print(f"   [TRASH]  {len(cities)} adet şehir silindi.")
-    except Exception as e:
-        print(f"   [WARN] Şehir temizleme hatası: {e}")
+
+    def collect_document_ids(collection):
+        document_ids = set()
+        for locale in ("tr", "en", "all"):
+            for status in ("draft", "published"):
+                page = 1
+                while True:
+                    params = {
+                        "locale": locale,
+                        "status": status,
+                        "pagination[page]": page,
+                        "pagination[pageSize]": 100,
+                    }
+                    res = requests.get(
+                        f"{STRAPI_URL}/api/{collection}",
+                        params=params,
+                        headers=headers,
+                        timeout=20,
+                    )
+                    if res.status_code != 200:
+                        print(f"   [WARN] {collection} listeleme hatası: {res.status_code} - {res.text[:120]}")
+                        break
+
+                    payload = res.json()
+                    for item in payload.get("data", []):
+                        doc_id = item.get("documentId")
+                        if doc_id:
+                            document_ids.add(doc_id)
+
+                    pagination = payload.get("meta", {}).get("pagination", {})
+                    if page >= pagination.get("pageCount", 1):
+                        break
+                    page += 1
+        return document_ids
+
+    for collection, label in (("places", "mekan"), ("cities", "şehir")):
+        try:
+            document_ids = collect_document_ids(collection)
+            deleted = 0
+            for doc_id in document_ids:
+                deleted_any = False
+                for locale in ("tr", "en"):
+                    res = requests.delete(
+                        f"{STRAPI_URL}/api/{collection}/{doc_id}",
+                        params={"locale": locale},
+                        headers=headers,
+                        timeout=20,
+                    )
+                    if res.status_code in (200, 202, 204, 404):
+                        deleted_any = True
+                    else:
+                        print(f"   [WARN] {label} silme hatası ({doc_id}, {locale}): {res.status_code} - {res.text[:120]}")
+                if deleted_any:
+                    deleted += 1
+            print(f"   [TRASH]  {deleted} adet {label} silindi.")
+        except Exception as e:
+            print(f"   [WARN] {label} temizleme hatası: {e}")
 
 def string_to_blocks(text):
     """Metni Strapi v5 Blocks formatına dönüştürür."""
@@ -281,73 +318,124 @@ def translate_to_english(text):
         return text
 
 
-def generate_image(place_name, city_name):
+def _detect_place_scene(place_name, description=""):
+    """Mekan adı ve açıklamasına göre görsel sahne tipini belirler."""
+    text = f"{place_name} {description}".lower()
+    rules = [
+        (("kaleiçi", "old town", "marina"), "charming Antalya old town with Ottoman houses, cobblestone streets, Roman harbor and Mediterranean coast"),
+        (("düden", "duden", "şelale", "selale", "waterfall"), "Lower Duden waterfall dropping from cliffs into turquoise Mediterranean sea in Antalya"),
+        (("aspendos", "antik tiyatro", "ancient theater", "amphitheater"), "well-preserved Aspendos Roman amphitheater stone seating and stage architecture"),
+        (("cami", "kilise", "ayasofya", "mosque", "church", "hagia"), "historic religious architecture with ornate details"),
+        (("çarşı", "bazaar", "market", "kemeraltı", "kemeralti"), "vibrant traditional covered marketplace with lanterns"),
+        (("saray", "palace", "topkapı"), "grand Ottoman palace courtyard and imperial architecture"),
+        (("balon", "göreme", "peri", "cappadocia", "kapadokya"), "Cappadocia fairy chimneys with colorful hot air balloons at sunrise"),
+        (("kale", "castle", "uçhisar"), "ancient rock castle on volcanic hill with panoramic valley view"),
+        (("yeraltı", "underground", "derinkuyu"), "mysterious ancient underground city tunnels and stone chambers"),
+        (("antik", "tiyatro", "theater", "efes", "ephesus", "aspendos"), "well-preserved ancient Roman ruins and amphitheater"),
+        (("saat kulesi", "clock tower"), "iconic Ottoman clock tower in a lively city square"),
+    ]
+    for keywords, scene in rules:
+        if any(keyword in text for keyword in keywords):
+            return scene
+    return "iconic Turkish tourist landmark with scenic landscape"
+
+
+def build_image_prompt(place_name, city_name, description=""):
     """
-    Pollinations engelini (402) kökten çözen, Picsum ve Unsplash altyapısını
-    kullanan asla çökmeyen ve engellenmeyen görsel indirme fonksiyonu.
+    Mekanın yapısına uygun turistik/manzara görseli için İngilizce prompt üretir.
+    Prompt; mekan adı, şehir ve açıklama içeriğiyle uyumludur.
+    """
+    scene = _detect_place_scene(place_name, description)
+    short_desc = re.sub(r"\s+", " ", description.strip())[:180]
+    context = f" Context: {short_desc}." if short_desc else ""
+    return (
+        f"Professional travel photography of {place_name} in {city_name}, Turkey. "
+        f"{scene}.{context} "
+        f"Golden hour lighting, wide-angle scenic composition, photorealistic, "
+        f"National Geographic style, vibrant colors, no text, no watermark, no people close-up"
+    )
+
+
+def _is_valid_image(content):
+    """Yanıtın gerçek bir JPEG/PNG görseli olduğunu doğrular."""
+    if not content or len(content) < 5_000:
+        return False
+    if content[:3] == b"\xff\xd8\xff":
+        return True
+    if content[:4] == b"\x89PNG":
+        return True
+    return False
+
+
+def _request_pollinations_image(prompt, seed):
+    """Pollinations AI görsel API'sine istek gönderir (gen + image endpoint)."""
+    encoded_prompt = requests.utils.quote(prompt)
+    params = {
+        "model": POLLINATIONS_IMAGE_MODEL,
+        "width": POLLINATIONS_IMAGE_WIDTH,
+        "height": POLLINATIONS_IMAGE_HEIGHT,
+        "seed": seed,
+        "enhance": "true",
+        "nologo": "true",
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    if POLLINATIONS_API_KEY:
+        headers["Authorization"] = f"Bearer {POLLINATIONS_API_KEY}"
+        params["key"] = POLLINATIONS_API_KEY
+
+    endpoints = [
+        f"https://gen.pollinations.ai/image/{encoded_prompt}",
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}",
+    ]
+    last_error = None
+    for endpoint in endpoints:
+        try:
+            res = requests.get(endpoint, params=params, headers=headers, timeout=120)
+            if res.status_code == 200 and _is_valid_image(res.content):
+                return res.content, endpoint
+            last_error = f"{endpoint} -> {res.status_code}: {res.text[:160]}"
+        except Exception as e:
+            last_error = f"{endpoint} -> {e}"
+    raise RuntimeError(last_error or "Pollinations görsel üretimi başarısız")
+
+
+def generate_image(place_name, city_name, description=""):
+    """
+    Pollinations AI ile mekana özel prompt kullanarak turistik/manzara görseli üretir.
+    Üretilen görsel geçici dosyaya kaydedilir; Strapi'ye yüklendikten sonra silinir.
     """
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", place_name).strip("_") or "place"
-    filename = f"temp_{safe_name}.jpg"
-    
-    # ─── AKILLI GÖRSEL SEÇİM SİSTEMİ ───
-    # Mekan ismine göre internetteki en popüler ve kaliteli seyahat fotoğraflarını eşleştiriyoruz
-    url = "https://picsum.photos/800/500"  # Genel fallback (varsayılan)
-    
-    p_name = place_name.lower()
-    if "ayasofya" in p_name or "hagia" in p_name:
-        url = "https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=800&auto=format&fit=crop&q=75"
-    elif "kapalıçarşı" in p_name or "bazaar" in p_name:
-        url = "https://images.unsplash.com/photo-1566838217578-1903568a76d9?w=800&auto=format&fit=crop&q=75"
-    elif "topkapı" in p_name or "palace" in p_name:
-        url = "https://images.unsplash.com/photo-1608815843437-a2285a3833b3?w=800&auto=format&fit=crop&q=75"
-    elif "göreme" in p_name or "balon" in p_name:
-        url = "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=800&auto=format&fit=crop&q=75"
-    elif "uçhisar" in p_name or "castle" in p_name:
-        url = "https://images.unsplash.com/photo-1570716428704-5177112028f8?w=800&auto=format&fit=crop&q=75"
-    elif "derinkuyu" in p_name or "yeraltı" in p_name:
-        url = "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&auto=format&fit=crop&q=75"
-    elif "kaleiçi" in p_name:
-        url = "https://images.unsplash.com/photo-1549144511-f099e773c147?w=800&auto=format&fit=crop&q=75"
-    elif "düden" in p_name or "şelale" in p_name:
-        url = "https://images.unsplash.com/photo-1433832597046-4f10e10ac764?w=800&auto=format&fit=crop&q=75"
-    elif "aspendos" in p_name or "tiyatro" in p_name:
-        url = "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop&q=75"
-    elif "saat kulesi" in p_name or "clock tower" in p_name:
-        url = "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=800&auto=format&fit=crop&q=75"
-    elif "efes" in p_name or "ephesus" in p_name:
-        url = "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&auto=format&fit=crop&q=75"
-    elif "kemeraltı" in p_name or "kemeralti" in p_name:
-        url = "https://images.unsplash.com/photo-1605809791441-2b0e98030999?w=800&auto=format&fit=crop&q=75"
+    short_hash = hashlib.md5(f"{place_name}-{city_name}".encode()).hexdigest()[:8]
+    filename = f"ai_{safe_name}_{short_hash}.jpg"
 
-    print(f"[PAINT] '{place_name}' için yüksek kaliteli ve kararlı görsel indiriliyor...")
+    prompt = build_image_prompt(place_name, city_name, description)
+    seed = abs(hash(f"{place_name}-{city_name}")) % 999_999
 
-    # Bot engelini aşmak için tarayıcı taklidi yapıyoruz
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+    print(f"[PAINT] '{place_name}' için Pollinations AI görseli üretiliyor...")
+    print(f"   [PROMPT] {prompt[:110]}...")
 
     for attempt in range(1, 4):
         try:
-            res = requests.get(url, headers=headers, timeout=20, stream=True)
-            res.raise_for_status()
-
+            image_bytes, endpoint = _request_pollinations_image(prompt, seed + attempt)
             with open(filename, "wb") as f:
-                for chunk in res.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
+                f.write(image_bytes)
             size = os.path.getsize(filename)
-            if size >= 5_000:
-                print(f"   [OK] Görsel başarıyla indirildi: {filename} ({size:,} bytes)")
-                return filename
-
-            time.sleep(1)
+            print(f"   [OK] YZ görseli üretildi: {filename} ({size:,} bytes) [{endpoint.split('/')[2]}]")
+            return filename
         except Exception as e:
-            print(f"   [ERROR] Görsel indirme denemesi başarısız ({attempt}/3): {e}")
-            # Eğer ana link patlarsa Picsum genel havuzuna yönlendiriyoruz (Asla boş dönmesin)
-            url = f"https://picsum.photos/800/500?random={attempt}"
-            time.sleep(1)
+            print(f"   [ERROR] Görsel üretim denemesi başarısız ({attempt}/3): {e}")
+            error_text = str(e).lower()
+            wait_seconds = 45 if "402" in error_text or "queue full" in error_text else 5 * attempt
+            time.sleep(wait_seconds)
 
+    if not POLLINATIONS_API_KEY:
+        print(
+            "   [WARN] POLLINATIONS_API_KEY tanımlı değil. "
+            "Ücretsiz anahtar: https://enter.pollinations.ai"
+        )
     return None
 
 def upload_image_to_strapi(token, filename):
@@ -502,6 +590,12 @@ def main():
 
     # 1. JWT kimlik doğrulama
     token = get_jwt_token()
+    if not POLLINATIONS_API_KEY:
+        print(
+            "[WARN] POLLINATIONS_API_KEY bulunamadı. Görsel üretimi için "
+            "https://enter.pollinations.ai adresinden ücretsiz API anahtarı alıp "
+            ".env dosyasına ekleyin."
+        )
     print()
     
     # Tek tuşla tekrar çalıştırıldığında mükerrer kayıt oluşmasını engelle.
@@ -538,8 +632,8 @@ def main():
             en_name = translate_to_english(place["name"])
             en_desc = translate_to_english(enriched_desc)
 
-            # 6. AI ile görsel üret
-            img_file = generate_image(place["name"], city["name"])
+            # 6. Pollinations AI ile mekana özel görsel üret
+            img_file = generate_image(place["name"], city["name"], enriched_desc)
 
             # 7. Görseli Strapi Media Library'ye yükle
             image_id = None

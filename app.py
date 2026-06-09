@@ -326,40 +326,6 @@ def image_url_from_cover(cover):
         
     return STRAPI_URL + url_str if url_str.startswith("/") else url_str
 
-# ─── GÖRSEL FALLBACK SİSTEMİ ──────────────────────────────────────────────────
-PLACE_FALLBACK_IMAGES = {
-    "ayasofya": "https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=800&auto=format&fit=crop&q=75",
-    "hagia": "https://images.unsplash.com/photo-1541432901042-2d8bd64b4a9b?w=800&auto=format&fit=crop&q=75",
-    "kapalıçarşı": "https://images.unsplash.com/photo-1566838217578-1903568a76d9?w=800&auto=format&fit=crop&q=75",
-    "bazaar": "https://images.unsplash.com/photo-1566838217578-1903568a76d9?w=800&auto=format&fit=crop&q=75",
-    "topkapı": "https://images.unsplash.com/photo-1608815843437-a2285a3833b3?w=800&auto=format&fit=crop&q=75",
-    "palace": "https://images.unsplash.com/photo-1608815843437-a2285a3833b3?w=800&auto=format&fit=crop&q=75",
-    "göreme": "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=800&auto=format&fit=crop&q=75",
-    "balon": "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=800&auto=format&fit=crop&q=75",
-    "uçhisar": "https://images.unsplash.com/photo-1570716428704-5177112028f8?w=800&auto=format&fit=crop&q=75",
-    "castle": "https://images.unsplash.com/photo-1570716428704-5177112028f8?w=800&auto=format&fit=crop&q=75",
-    "derinkuyu": "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&auto=format&fit=crop&q=75",
-    "yeraltı": "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=800&auto=format&fit=crop&q=75",
-    "kaleiçi": "https://images.unsplash.com/photo-1549144511-f099e773c147?w=800&auto=format&fit=crop&q=75",
-    "düden": "https://images.unsplash.com/photo-1433832597046-4f10e10ac764?w=800&auto=format&fit=crop&q=75",
-    "şelale": "https://images.unsplash.com/photo-1433832597046-4f10e10ac764?w=800&auto=format&fit=crop&q=75",
-    "aspendos": "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop&q=75",
-    "tiyatro": "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&auto=format&fit=crop&q=75",
-    "saat kulesi": "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=800&auto=format&fit=crop&q=75",
-    "clock tower": "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=800&auto=format&fit=crop&q=75",
-    "efes": "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&auto=format&fit=crop&q=75",
-    "ephesus": "https://images.unsplash.com/photo-1605649487212-47bdab064df7?w=800&auto=format&fit=crop&q=75",
-    "kemeraltı": "https://images.unsplash.com/photo-1605809791441-2b0e98030999?w=800&auto=format&fit=crop&q=75",
-    "kemeralti": "https://images.unsplash.com/photo-1605809791441-2b0e98030999?w=800&auto=format&fit=crop&q=75"
-}
-
-def get_fallback_image(place_name):
-    p_name = str(place_name).lower()
-    for keyword, url in PLACE_FALLBACK_IMAGES.items():
-        if keyword in p_name:
-            return url
-    return None  # Unsplash eşleşmesi yoksa None dönüyoruz
-
 @st.cache_data(ttl=60, show_spinner=False)
 def is_url_valid(url):
     if not url:
@@ -520,24 +486,14 @@ for idx, place in enumerate(filtered_places):
         display_place_name = safe_translate(place_name, locale)
         display_place_desc = safe_translate(place_desc, locale)
         
-        # 1. Öncelikle yüksek kaliteli Unsplash görsellerini doğrudan eşleştir
-        img_url = get_fallback_image(place_name)
-        
-        # 2. Eğer Unsplash eşleşmesi yoksa, Strapi cover görselini kullan
-        if not img_url:
-            cover_url = image_url_from_cover(place.get("cover"))
-            if cover_url:
-                if cover_url.count("https://") > 1:
-                    cover_url = "https://" + cover_url.split("https://")[-1]
-                
-                # Eğer local upload ise doğruluğunu kontrol et
-                is_local_upload = STRAPI_URL in cover_url or cover_url.startswith("/") or "onrender.com" in cover_url
-                if not is_local_upload or is_url_valid(cover_url):
-                    img_url = cover_url
-
-        # 3. Her ikisi de yoksa genel bir Picsum görseli kullan
-        if not img_url:
-            img_url = "https://picsum.photos/800/500"
+        # Strapi Media Library'deki YZ üretimi kapak görselini kullan
+        img_url = None
+        cover_url = image_url_from_cover(place.get("cover"))
+        if cover_url:
+            if cover_url.count("https://") > 1:
+                cover_url = "https://" + cover_url.split("https://")[-1]
+            if is_url_valid(cover_url):
+                img_url = cover_url
 
         if img_url:
             st.markdown(f'<div class="place-image-container"><img src="{img_url}" alt="{escape(str(display_place_name))}" loading="lazy"></div>', unsafe_allow_html=True)
