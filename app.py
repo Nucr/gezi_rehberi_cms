@@ -11,6 +11,7 @@ import streamlit as st
 import requests
 import os
 import hashlib
+import unicodedata
 from html import escape
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -355,6 +356,44 @@ def get_curated_place_image(place_name):
     normalized = str(place_name).strip().lower()
     return CURATED_PLACE_IMAGES.get(normalized)
 
+CURATED_CITY_IMAGES = {
+    "istanbul": "https://commons.wikimedia.org/wiki/Special:FilePath/Hagia%20Sophia%20Istanbul%202013%201a.jpg?width=1200",
+    "kapadokya": "https://commons.wikimedia.org/wiki/Special:FilePath/Hot%20air%20balloons%20in%20Cappadocia.jpg?width=1200",
+    "cappadocia": "https://commons.wikimedia.org/wiki/Special:FilePath/Hot%20air%20balloons%20in%20Cappadocia.jpg?width=1200",
+    "antalya": "https://commons.wikimedia.org/wiki/Special:FilePath/Antalya%20Kalei%C3%A7i.jpg?width=1200",
+    "izmir": "https://commons.wikimedia.org/wiki/Special:FilePath/%C4%B0zmir%20Clock%20Tower%201.jpg?width=1200",
+}
+
+CURATED_PLACE_IMAGES.update({
+    "ayasofya": "https://commons.wikimedia.org/wiki/Special:FilePath/Hagia%20Sophia%20Istanbul%202013%201a.jpg?width=1200",
+    "hagia sophia": "https://commons.wikimedia.org/wiki/Special:FilePath/Hagia%20Sophia%20Istanbul%202013%201a.jpg?width=1200",
+    "kapalicarsi": "https://commons.wikimedia.org/wiki/Special:FilePath/Grand%20Bazaar%2C%20Istanbul%20113.JPG?width=1200",
+    "grand bazaar": "https://commons.wikimedia.org/wiki/Special:FilePath/Grand%20Bazaar%2C%20Istanbul%20113.JPG?width=1200",
+    "topkapi sarayi": "https://commons.wikimedia.org/wiki/Special:FilePath/Topkapi%20Palace%20Bosphorus%202007%2004.JPG?width=1200",
+    "topkapi palace": "https://commons.wikimedia.org/wiki/Special:FilePath/Topkapi%20Palace%20Bosphorus%202007%2004.JPG?width=1200",
+    "goreme acik hava muzesi": "https://commons.wikimedia.org/wiki/Special:FilePath/G%C3%B6reme%20Open%20Air%20Museum-20090910-DSCF0849.jpg?width=1200",
+    "goreme open air museum": "https://commons.wikimedia.org/wiki/Special:FilePath/G%C3%B6reme%20Open%20Air%20Museum-20090910-DSCF0849.jpg?width=1200",
+    "uchisar kalesi": "https://commons.wikimedia.org/wiki/Special:FilePath/U%C3%A7hisar%20Castle%2003.jpg?width=1200",
+    "uchisar castle": "https://commons.wikimedia.org/wiki/Special:FilePath/U%C3%A7hisar%20Castle%2003.jpg?width=1200",
+    "derinkuyu yeralti sehri": "https://commons.wikimedia.org/wiki/Special:FilePath/Derinkuyu%20Underground%20City.JPG?width=1200",
+    "derinkuyu underground city": "https://commons.wikimedia.org/wiki/Special:FilePath/Derinkuyu%20Underground%20City.JPG?width=1200",
+    "izmir saat kulesi": "https://commons.wikimedia.org/wiki/Special:FilePath/%C4%B0zmir%20Clock%20Tower%201.jpg?width=1200",
+    "izmir clock tower": "https://commons.wikimedia.org/wiki/Special:FilePath/%C4%B0zmir%20Clock%20Tower%201.jpg?width=1200",
+    "efes antik kenti": "https://commons.wikimedia.org/wiki/Special:FilePath/Ephesus%20Celsus%20Library%20Fa%C3%A7ade.jpg?width=1200",
+    "ephesus": "https://commons.wikimedia.org/wiki/Special:FilePath/Ephesus%20Celsus%20Library%20Fa%C3%A7ade.jpg?width=1200",
+    "tarihi kemeralti carsisi": "https://commons.wikimedia.org/wiki/Special:FilePath/Kemeralt%C4%B1%20market%2002.jpg?width=1200",
+    "kemeralti bazaar": "https://commons.wikimedia.org/wiki/Special:FilePath/Kemeralt%C4%B1%20market%2002.jpg?width=1200",
+})
+
+def normalize_image_key(value):
+    normalized = unicodedata.normalize("NFKD", str(value).strip().lower())
+    normalized = normalized.replace("ı", "i").replace("İ", "i")
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return " ".join(normalized.split())
+
+def get_curated_place_image(place_name):
+    return CURATED_PLACE_IMAGES.get(normalize_image_key(place_name))
+
 def build_pollinations_image_url(subject, context="Turkey travel destination", width=1200, height=700):
     """Her yeni ÅŸehir/mekan iÃ§in deterministik ve boÅŸ kalmayan uzak gÃ¶rsel URL'i Ã¼retir."""
     prompt = (
@@ -373,6 +412,9 @@ def get_curated_city_image(city_name):
     city = str(city_name).strip()
     if not city:
         return None
+    curated_url = CURATED_CITY_IMAGES.get(normalize_image_key(city))
+    if curated_url:
+        return curated_url
     return build_pollinations_image_url(f"{city} city in Turkey", "Turkey travel destination")
 
 def get_place_image_url(place):
@@ -386,7 +428,9 @@ def get_place_image_url(place):
             img_url = cover_url
 
     if not img_url:
-        img_url = get_curated_place_image(place_name)
+        curated_url = get_curated_place_image(place_name)
+        if curated_url:
+            img_url = curated_url
 
     if not img_url:
         city = normalize_relation(place.get("city"))
@@ -430,12 +474,16 @@ def get_city_image_url(city_info, city_places):
         if media_url and is_url_valid(media_url):
             return media_url
 
+    city_url = get_curated_city_image(city_name)
+    if city_url:
+        return city_url
+
     for place in city_places:
         image_url = get_place_image_url(place)
         if image_url:
             return image_url
 
-    return get_curated_city_image(city_name)
+    return build_pollinations_image_url(f"{city_name} city in Turkey", "Turkey travel destination")
 
 @st.cache_data(ttl=10, show_spinner=False)
 def fetch_cities(locale="tr"):
