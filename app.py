@@ -10,6 +10,7 @@
 import streamlit as st
 import requests
 import os
+import hashlib
 from html import escape
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
@@ -81,9 +82,25 @@ html, body, [class*="css"] {
     background: linear-gradient(135deg, rgba(30,27,75,0.8) 0%, rgba(49,46,129,0.6) 100%);
     border: 1px solid rgba(99,102,241,0.3);
     border-radius: 16px;
-    padding: 24px 28px;
+    padding: 0;
     margin-bottom: 28px;
     backdrop-filter: blur(20px);
+    overflow: hidden;
+}
+.city-card-image {
+    width: 100%;
+    height: 260px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+}
+.city-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.city-card-content {
+    padding: 24px 28px;
 }
 .city-card-title {
     font-size: 1.8em;
@@ -338,6 +355,46 @@ def get_curated_place_image(place_name):
     normalized = str(place_name).strip().lower()
     return CURATED_PLACE_IMAGES.get(normalized)
 
+def build_pollinations_image_url(subject, context="Turkey travel destination", width=1200, height=700):
+    """Her yeni ÅŸehir/mekan iÃ§in deterministik ve boÅŸ kalmayan uzak gÃ¶rsel URL'i Ã¼retir."""
+    prompt = (
+        f"Professional travel photography of {subject}, {context}. "
+        "Iconic city skyline or landmark, golden hour, wide-angle scenic composition, "
+        "photorealistic, vibrant colors, no text, no watermark, no people close-up"
+    )
+    encoded_prompt = requests.utils.quote(prompt)
+    seed = int(hashlib.md5(str(subject).encode()).hexdigest()[:8], 16) % 999_999
+    return (
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        f"?model=flux&width={width}&height={height}&seed={seed}&enhance=true&nologo=true"
+    )
+
+def get_curated_city_image(city_name):
+    city = str(city_name).strip()
+    if not city:
+        return None
+    return build_pollinations_image_url(f"{city} city in Turkey", "Turkey travel destination")
+
+def get_place_image_url(place):
+    place_name = place.get("name", "")
+    img_url = None
+    cover_url = image_url_from_cover(place.get("cover"))
+    if cover_url:
+        if cover_url.count("https://") > 1:
+            cover_url = "https://" + cover_url.split("https://")[-1]
+        if is_url_valid(cover_url):
+            img_url = cover_url
+
+    if not img_url:
+        img_url = get_curated_place_image(place_name)
+
+    if not img_url:
+        city = normalize_relation(place.get("city"))
+        city_name = city.get("name", "Turkey") if isinstance(city, dict) else "Turkey"
+        img_url = build_pollinations_image_url(place_name, f"{city_name}, Turkey tourist attraction", 800, 500)
+
+    return img_url
+
 @st.cache_data(ttl=60, show_spinner=False)
 def is_url_valid(url):
     if not url:
@@ -365,6 +422,35 @@ def api_headers():
     if STRAPI_API_TOKEN and STRAPI_API_TOKEN.lower() not in ("none", "null", "false", ""):
         return {"Authorization": f"Bearer {STRAPI_API_TOKEN}"}
     return {}
+
+def get_city_image_url(city_info, city_places):
+    city_name = city_info.get("original_name") or city_info.get("name") or ""
+    for field in ("cover", "image", "photo", "thumbnail"):
+        media_url = image_url_from_cover(city_info.get(field))
+        if media_url and is_url_valid(media_url):
+            return media_url
+
+    for place in city_places:
+        image_url = get_place_image_url(place)
+        if image_url:
+            return image_url
+
+    return get_curated_city_image(city_name)
+
+@st.cache_data(ttl=10, show_spinner=False)
+def fetch_cities(locale="tr"):
+    try:
+        url = f"{STRAPI_URL}/api/cities?locale={locale}&populate=*&pagination[pageSize]=200&sort=id:desc"
+        headers = api_headers()
+        res = requests.get(url, headers=headers, timeout=10)
+        res.raise_for_status()
+        return dedupe_entries([normalize_entry(item) for item in res.json().get("data", [])])
+
+    except Exception as e:
+        st.sidebar.error(f"Şehir API Bağlantı Hatası: {e}")
+        if 'res' in locals():
+            st.sidebar.error(f"Sunucu Yanıtı ({res.status_code}): {res.text[:150]}")
+        return None
 
 @st.cache_data(ttl=10, show_spinner=False)
 def fetch_places(locale="tr"):
@@ -402,18 +488,45 @@ with st.sidebar:
     st.markdown("---")
 
 # ─── VERİ YÜKLEME (HER ZAMAN TR - TAM LİSTE) ──────────────────────────────────
+cities = fetch_cities("tr")
 places = fetch_places("tr")
 
-if places is None:
+if cities is None and places is None:
     st.markdown(f'<div class="custom-error">⚠️ Veriler yüklenemedi. Lütfen Strapi backendinizin ayakta olduğundan emin olun.</div>', unsafe_allow_html=True)
     st.stop()
 
-if not places:
+if cities is None:
+    cities = []
+
+if places is None:
+    places = []
+
+if not cities and not places:
     st.markdown(f'<div class="custom-error">Veritabanı şu anda boş. Yeni şehir ve mekan verisi eklediğinizde burada görünecek.</div>', unsafe_allow_html=True)
     st.stop()
 
 # ─── ŞEHİR MAPLEME YAPISI ─────────────────────────────────────────────────────
 city_map = {}
+for city in cities:
+    if city and isinstance(city, dict):
+        original_city_name = city.get("name", "")
+        city_id = city.get("documentId") or city.get("id")
+
+        if original_city_name and city_id:
+            display_city_name = safe_translate(original_city_name, locale) if locale == "en" else original_city_name
+
+            if display_city_name not in city_map:
+                city_map[display_city_name] = {
+                    "id": city_id,
+                    "original_name": original_city_name,
+                    "country": city.get("country", "Türkiye"),
+                    "description": city.get("description", ""),
+                    "cover": city.get("cover"),
+                    "image": city.get("image"),
+                    "photo": city.get("photo"),
+                    "thumbnail": city.get("thumbnail")
+                }
+
 for p in places:
     city = normalize_relation(p.get("city"))
     if city and isinstance(city, dict):
@@ -428,7 +541,11 @@ for p in places:
                     "id": city_id,
                     "original_name": original_city_name,
                     "country": city.get("country", "Türkiye"),
-                    "description": city.get("description", "")
+                    "description": city.get("description", ""),
+                    "cover": city.get("cover"),
+                    "image": city.get("image"),
+                    "photo": city.get("photo"),
+                    "thumbnail": city.get("thumbnail")
                 }
 
 city_names = sorted(list(city_map.keys()))
@@ -465,22 +582,26 @@ city_country  = selected_info.get("country", "")
 display_country = safe_translate(city_country, locale)
 display_desc = safe_translate(city_desc, locale)
 
-st.markdown(f"""
-<div class="city-card">
-    <div class="city-card-country">📌 {escape(display_country)}</div>
-    <div class="city-card-title">🏙️ {escape(selected_city)}</div>
-    <div class="city-card-desc">{escape(display_desc if display_desc else ('Açıklama yok.' if locale == 'tr' else 'No description.'))}</div>
-</div>
-""", unsafe_allow_html=True)
-
-# ─── MEKANLARI FİLTRELE ───────────────────────────────────────────────────────
 selected_city_id = selected_info.get("id")
 filtered_places  = [
     p for p in places
     if normalize_relation(p.get("city"))
     and (normalize_relation(p.get("city")).get("documentId") or normalize_relation(p.get("city")).get("id")) == selected_city_id
 ]
+city_image_url = get_city_image_url(selected_info, filtered_places)
 
+st.markdown(f"""
+<div class="city-card">
+    <div class="city-card-image"><img src="{city_image_url}" alt="{escape(selected_city)}" loading="lazy"></div>
+    <div class="city-card-content">
+        <div class="city-card-country">📌 {escape(display_country)}</div>
+        <div class="city-card-title">🏙️ {escape(selected_city)}</div>
+        <div class="city-card-desc">{escape(display_desc if display_desc else ('Açıklama yok.' if locale == 'tr' else 'No description.'))}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ─── MEKANLARI FİLTRELE ───────────────────────────────────────────────────────
 header_text = f"📍 {escape(selected_city)} Mekanları ({len(filtered_places)} yer)" if locale == "tr" else f"📍 Places in {escape(selected_city)} ({len(filtered_places)} places)"
 st.markdown(f'<div class="section-header">{header_text}</div>', unsafe_allow_html=True)
 
@@ -498,22 +619,8 @@ for idx, place in enumerate(filtered_places):
         display_place_name = safe_translate(place_name, locale)
         display_place_desc = safe_translate(place_desc, locale)
         
-        # Strapi Media Library'deki YZ üretimi kapak görselini kullan
-        img_url = None
-        cover_url = image_url_from_cover(place.get("cover"))
-        if cover_url:
-            if cover_url.count("https://") > 1:
-                cover_url = "https://" + cover_url.split("https://")[-1]
-            if is_url_valid(cover_url):
-                img_url = cover_url
-
-        if not img_url:
-            img_url = get_curated_place_image(place_name)
-
-        if img_url:
-            st.markdown(f'<div class="place-image-container"><img src="{img_url}" alt="{escape(str(display_place_name))}" loading="lazy"></div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="place-image-container" style="background: linear-gradient(135deg, #1e1b4b, #312e81); color: #6366f1; font-size: 4em;">🗺️</div>', unsafe_allow_html=True)
+        img_url = get_place_image_url(place)
+        st.markdown(f'<div class="place-image-container"><img src="{img_url}" alt="{escape(str(display_place_name))}" loading="lazy"></div>', unsafe_allow_html=True)
 
         stars, score_val = score_to_stars(place_score)
         score_display = f"{score_val:.1f}" if score_val else ""
